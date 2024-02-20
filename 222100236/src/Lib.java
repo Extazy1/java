@@ -4,10 +4,12 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.*;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public class Lib {
+    private static final Map<String, Map<String, Map<String, String>>> eventAthleteScores = new HashMap<>();     // 存储每个赛事的运动员信息
 
     // 解析运动员信息
     private static String parseAthlete(Athlete athlete, String countryName) {
@@ -43,6 +45,38 @@ public class Lib {
         return sb;
     }
 
+    // 解析赛事不同阶段的详细信息
+    private static void parseAllResults(List<CompetitionResult.Result> results, String stage, String event) {
+        Map<String, Map<String, String>> athleteScores = eventAthleteScores.computeIfAbsent(event, k -> new HashMap<>());
+
+        for (CompetitionResult.Result result : results) {
+            String fullName = result.getFullName();
+            Map<String, String> scores = athleteScores.computeIfAbsent(fullName, k -> new HashMap<>());
+            scores.put(stage + "Rank", String.valueOf(result.getRank()));
+            scores.put(stage + "Score", generateScoreString(result.getDives()));
+        }
+    }
+
+    // 生成所需的分数
+    private static String generateScoreString(List<CompetitionResult.Dive> dives) {
+        if (dives == null || dives.isEmpty()) {
+            return "*";
+        }
+        StringBuilder scoreBuilder = new StringBuilder();
+        double totalPoints = 0;
+        for (CompetitionResult.Dive dive : dives) {
+            String divePoints = dive.getDivePoints();
+            scoreBuilder.append(divePoints);
+            totalPoints += Double.parseDouble(divePoints);
+            if (dives.indexOf(dive) < dives.size() - 1) {
+                scoreBuilder.append(" + ");
+            }
+        }
+        if (scoreBuilder.length() > 0) {
+            scoreBuilder.append(" = ").append(String.format("%.2f", totalPoints));
+        }
+        return scoreBuilder.toString();
+    }
 
     // 获取赛事Id
     public static String getEventIdByDisciplineName(String disciplineName) throws IOException {
@@ -91,6 +125,67 @@ public class Lib {
         }
 
         return res.toString();
+    }
+
+    // 获取某个赛事的详细结果
+    public static String getAllResults(String name) throws IOException {
+        String id = getEventIdByDisciplineName(name);
+        String filePath = "src/data/results/" + id + ".json";
+        StringBuilder res = new StringBuilder();
+
+        // 读取JSON文件内容
+        String content = new String(Files.readAllBytes(Paths.get(filePath)), StandardCharsets.UTF_8);
+        Gson gson = new Gson();
+        CompetitionResult competitionResult = gson.fromJson(content, CompetitionResult.class);
+
+        // 获取当前赛事的运动员信息
+        for (CompetitionResult.Heat heat : competitionResult.Heats) {
+            parseAllResults(heat.Results, heat.Name, id);
+        }
+
+        // 所有阶段处理完毕后，进行最终输出
+        res.append(finalizeResultsOutput(id));
+
+        return res.toString();
+    }
+
+    // 所有阶段处理完毕后，进行最终输出
+    public static String finalizeResultsOutput(String event) {
+        StringBuilder sb = new StringBuilder();
+        Map<String, Map<String, String>> athleteScores = eventAthleteScores.getOrDefault(event, new HashMap<>());
+
+        // 排序逻辑不变，确保按初赛排名排序
+        athleteScores.entrySet().stream()
+                .sorted(Comparator.comparingInt(e -> {
+                    String rankStr = e.getValue().get("PreliminaryRank");
+                    return rankStr.equals("*") ? Integer.MAX_VALUE : Integer.parseInt(rankStr);
+                }))
+                .forEach(entry -> {
+                    String fullName = entry.getKey();
+                    Map<String, String> info = entry.getValue();
+
+                    // 生成排名字符串，正确处理缺失的阶段
+                    String rank = Stream.of("PreliminaryRank", "SemifinalRank", "FinalRank")
+                            .map(key -> info.getOrDefault(key, "*"))
+                            .collect(Collectors.joining(" | "));
+
+                    // 生成得分字符串，正确处理缺失的得分
+                    String preliminaryScore = info.getOrDefault("PreliminaryScore", "*");
+                    String semifinalScore = info.getOrDefault("SemifinalScore", "*");
+                    String finalScore = info.getOrDefault("FinalScore", "*");
+
+                    // 构建最终输出
+                    sb.append("Full Name:").append(fullName).append("\n");
+                    sb.append("Rank:").append(rank).append("\n");
+                    sb.append("Preliminary Score:").append(preliminaryScore).append("\n");
+                    sb.append("Semifinal Score:").append(semifinalScore).append("\n");
+                    sb.append("Final Score:").append(finalScore).append("\n-----\n");
+                });
+
+        // 清理该赛事数据
+        eventAthleteScores.remove(event);
+
+        return sb.toString();
     }
 
     // 获取运动员信息
@@ -156,7 +251,8 @@ public class Lib {
 
     // 主函数用于测试
     public static void main(String[] args) throws IOException {
-        System.out.print(Lib.getAthletes());
-        System.out.print(Lib.getFinalResult("Women 1m Springboard"));
+        //System.out.print(Lib.getAthletes());
+        //System.out.print(Lib.getFinalResult("Women 1m Springboard"));
+        System.out.print(Lib.getAllResults("Women 10m Platform"));
     }
 }
