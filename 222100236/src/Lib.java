@@ -19,11 +19,11 @@ public class Lib {
     }
 
     // 解析决赛信息
-    private static StringBuilder parseFinalResult(CompetitionResult.Result result) {
+    private static StringBuilder parseFinalResult(CompetitionResult.Result result, boolean synchronizedEvent) {
         StringBuilder sb = new StringBuilder();
 
         // 获取需要输出的字段
-        String fullName = result.getFullName();
+        String fullName = synchronizedEvent ? formatSynchronisedFullName(result.getFullName()) : result.getFullName();
         int rank = result.getRank();
         List<CompetitionResult.Dive> dives = result.getDives();
 
@@ -50,7 +50,7 @@ public class Lib {
         Map<String, Map<String, String>> athleteScores = eventAthleteScores.computeIfAbsent(event, k -> new HashMap<>());
 
         for (CompetitionResult.Result result : results) {
-            String fullName = result.getFullName();
+            String fullName = isSynchronisedEvent(event) ? formatSynchronisedFullName(result.getFullName()) : result.getFullName();
             Map<String, String> scores = athleteScores.computeIfAbsent(fullName, k -> new HashMap<>());
             scores.put(stage + "Rank", String.valueOf(result.getRank()));
             scores.put(stage + "Score", generateScoreString(result.getDives()));
@@ -78,6 +78,22 @@ public class Lib {
         return scoreBuilder.toString();
     }
 
+    // 判断是否为双人赛事
+    private static boolean isSynchronisedEvent(String eventName) {
+        return eventName.trim().toLowerCase().endsWith("synchronised");
+    }
+
+    // 格式化双人赛事中的运动员姓名
+    // todo 部分选手姓名存在问题
+    private static String formatSynchronisedFullName(String fullName) {
+        // 将姓名按 "/" 分割，得到两个运动员的姓名
+        String[] names = fullName.split(" / ");
+        // 对每个姓名分割为姓和名，然后排序
+        Arrays.sort(names, Comparator.comparing(name -> name.split(" ")[1])); // 假设姓氏在前
+        // 重新组合姓名，格式为 'A & B'
+        return names[0] + " & " + names[1];
+    }
+
     // 获取赛事Id
     public static String getEventIdByDisciplineName(String disciplineName) throws IOException {
         String filePath = "src/data/event.json";
@@ -102,9 +118,10 @@ public class Lib {
         return "Discipline not found"; // 如果未找到匹配的DisciplineName，返回提示信息
     }
 
-    // 获取决赛结果
+    // 获取某个赛事的决赛结果
     public static String getFinalResult(String name) throws IOException {
         String id = getEventIdByDisciplineName(name);
+        boolean synchronisedEvent = isSynchronisedEvent(name);
         String filePath = "src/data/results/" + id + ".json";
         StringBuilder res = new StringBuilder();
 
@@ -118,7 +135,7 @@ public class Lib {
         for (CompetitionResult.Heat heat : competitionResult.Heats) {
             if ("Final".equals(heat.Name)) { // 检查是否为Final
                 for (CompetitionResult.Result result : heat.Results) {
-                    res.append(parseFinalResult(result));
+                    res.append(parseFinalResult(result, synchronisedEvent));
                 }
                 break; // 找到final后就可以停止搜索
             }
@@ -140,11 +157,11 @@ public class Lib {
 
         // 获取当前赛事的运动员信息
         for (CompetitionResult.Heat heat : competitionResult.Heats) {
-            parseAllResults(heat.Results, heat.Name, id);
+            parseAllResults(heat.Results, heat.Name, name);
         }
 
         // 所有阶段处理完毕后，进行最终输出
-        res.append(finalizeResultsOutput(id));
+        res.append(finalizeResultsOutput(name));
 
         return res.toString();
     }
@@ -210,6 +227,7 @@ public class Lib {
     }
 
     // 获取输入文件中的指令
+    // todo 完善指令处理流程
     public static List<Instruction> getInstructionsFromFile(String filePath) throws IOException {
         List<Instruction> instructions = new ArrayList<>();
         String content = new String(Files.readAllBytes(Paths.get(filePath)), StandardCharsets.UTF_8);
