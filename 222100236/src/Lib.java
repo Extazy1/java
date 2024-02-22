@@ -15,21 +15,21 @@ public class Lib {
     private static String parseAthlete(Athlete athlete, String countryName) {
         String gender = athlete.getGender() == 0 ? "Male" : "Female";
         String fullName = athlete.getPreferredLastName() + " " + athlete.getPreferredFirstName();
-        return String.format("Full Name: %s\nGender: %s\nCountry: %s\n-----\n", fullName, gender, countryName);
+        return String.format("Full Name:%s\nGender:%s\nCountry:%s\n-----\n", fullName, gender, countryName);
     }
 
     // 解析决赛信息
-    private static StringBuilder parseFinalResult(CompetitionResult.Result result, boolean synchronizedEvent) {
+    private static StringBuilder parseFinalResult(CompetitionResult.Result result) {
         StringBuilder sb = new StringBuilder();
 
         // 获取需要输出的字段
-        String fullName = synchronizedEvent ? formatSynchronisedFullName(result.getFullName()) : result.getFullName();
+        String fullName = result.getFullName().contains("/") ? formatSynchronisedFullName(result) : result.getFullName();
         int rank = result.getRank();
         List<CompetitionResult.Dive> dives = result.getDives();
 
-        sb.append("Full Name: ").append(fullName).append("\n");
-        sb.append("Rank: ").append(rank).append("\n");
-        sb.append("Score: ");
+        sb.append("Full Name:").append(fullName).append("\n");
+        sb.append("Rank:").append(rank).append("\n");
+        sb.append("Score:");
         double totalPoints = 0;
 
         for (CompetitionResult.Dive dive : dives) {
@@ -50,7 +50,7 @@ public class Lib {
         Map<String, Map<String, String>> athleteScores = eventAthleteScores.computeIfAbsent(event, k -> new HashMap<>());
 
         for (CompetitionResult.Result result : results) {
-            String fullName = isSynchronisedEvent(event) ? formatSynchronisedFullName(result.getFullName()) : result.getFullName();
+            String fullName = result.getFullName().contains("/") ? formatSynchronisedFullName(result) : result.getFullName();
             Map<String, String> scores = athleteScores.computeIfAbsent(fullName, k -> new HashMap<>());
             scores.put(stage + "Rank", String.valueOf(result.getRank()));
             scores.put(stage + "Score", generateScoreString(result.getDives()));
@@ -78,16 +78,10 @@ public class Lib {
         return scoreBuilder.toString();
     }
 
-    // 判断是否为双人赛事
-    private static boolean isSynchronisedEvent(String eventName) {
-        return eventName.trim().toLowerCase().endsWith("synchronised");
-    }
-
     // 格式化双人赛事中的运动员姓名
-    // todo 部分选手姓名存在问题
-    private static String formatSynchronisedFullName(String fullName) {
+    private static String formatSynchronisedFullName(CompetitionResult.Result result) {
         // 将姓名按 "/" 分割，得到两个运动员的姓名
-        String[] names = fullName.split(" / ");
+        String[] names = result.getFullName().split("\\s*/\\s*");
         // 对每个姓名分割为姓和名，然后排序
         Arrays.sort(names, Comparator.comparing(name -> name.split(" ")[1])); // 假设姓氏在前
         // 重新组合姓名，格式为 'A & B'
@@ -121,7 +115,6 @@ public class Lib {
     // 获取某个赛事的决赛结果
     public static String getFinalResult(String name) throws IOException {
         String id = getEventIdByDisciplineName(name);
-        boolean synchronisedEvent = isSynchronisedEvent(name);
         String filePath = "src/data/results/" + id + ".json";
         StringBuilder res = new StringBuilder();
 
@@ -135,7 +128,7 @@ public class Lib {
         for (CompetitionResult.Heat heat : competitionResult.Heats) {
             if ("Final".equals(heat.Name)) { // 检查是否为Final
                 for (CompetitionResult.Result result : heat.Results) {
-                    res.append(parseFinalResult(result, synchronisedEvent));
+                    res.append(parseFinalResult(result));
                 }
                 break; // 找到final后就可以停止搜索
             }
@@ -219,7 +212,12 @@ public class Lib {
 
         // 获取所有运动员信息
         for (Country country : countries) {
-            for (Athlete athlete : country.getParticipations()) {
+            // 使用stream()对参与者按照PreferredFirstName进行排序
+            List<Athlete> sortedAthletes = country.getParticipations().stream()
+                    .sorted(Comparator.comparing(Athlete::getPreferredFirstName))
+                    .collect(Collectors.toList());
+
+            for (Athlete athlete : sortedAthletes) {
                 ath.append(parseAthlete(athlete, country.getCountryName()));
             }
         }
