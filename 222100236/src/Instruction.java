@@ -1,13 +1,25 @@
+import java.util.Arrays;
+
 public class Instruction {
     private String type;
-    private String argument;
+    private String eventName; // 第一个参数：比赛名称
+    private boolean detail; // 第二个参数：是否包含detail
 
     public Instruction(String type, String argument) {
         this.type = type;
+        this.detail = false; // 默认没有detail参数
         if ("result".equals(type) && argument != null) {
-            this.argument = capitalizeFirstAndThirdWords(argument);
+            // 分割参数，检查是否包含detail
+            String[] parts = argument.split("\\s+");
+            if (parts.length > 1 && "detail".equalsIgnoreCase(parts[parts.length - 1])) {
+                this.detail = true; // 如果最后一个参数是detail，则设置detail为true
+                // 移除detail参数，剩下的部分为eventName
+                this.eventName = capitalizeFirstAndThirdWords(String.join(" ", Arrays.copyOf(parts, parts.length - 1)));
+            } else {
+                this.eventName = capitalizeFirstAndThirdWords(argument);
+            }
         } else {
-            this.argument = argument;
+            this.eventName = argument; // 对于非result类型，eventName直接等于argument
         }
     }
 
@@ -33,16 +45,20 @@ public class Instruction {
         return type;
     }
 
-    public String getArgument() {
-        return argument;
+    public String getEventName() {
+        return eventName;
+    }
+
+    public boolean isDetail() {
+        return detail;
     }
 
     @Override
     public String toString() {
-        if (this.argument == null) {
+        if (this.eventName == null) {
             return this.type;
         } else {
-            return this.type + " " + this.argument;
+            return this.type + " " + this.eventName + (this.detail ? " detail" : "");
         }
     }
 }

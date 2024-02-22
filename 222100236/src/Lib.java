@@ -23,7 +23,7 @@ public class Lib {
         StringBuilder sb = new StringBuilder();
 
         // 获取需要输出的字段
-        String fullName = result.getFullName().contains("/") ? formatSynchronisedFullName(result) : result.getFullName();
+        String fullName = result.getFullName();
         int rank = result.getRank();
         List<CompetitionResult.Dive> dives = result.getDives();
 
@@ -225,18 +225,39 @@ public class Lib {
     }
 
     // 获取输入文件中的指令
-    // todo 完善指令处理流程
     public static List<Instruction> getInstructionsFromFile(String filePath) throws IOException {
         List<Instruction> instructions = new ArrayList<>();
+        List<String> validEvents = Arrays.asList(
+                "women 1m springboard", "women 3m springboard", "women 10m platform",
+                "women 3m synchronised", "women 10m synchronised",
+                "men 1m springboard", "men 3m springboard", "men 10m platform",
+                "men 3m synchronised", "men 10m synchronised"
+        );
+
         String content = new String(Files.readAllBytes(Paths.get(filePath)), StandardCharsets.UTF_8);
         String[] lines = content.split("\n");
         for (String line : lines) {
             line = line.trim();
-            if (line.equals("players")) {
-                instructions.add(new Instruction("players", null));
-            } else if (line.startsWith("result")) {
-                String argument = line.substring("result".length()).trim();
-                instructions.add(new Instruction("result", argument));
+            if (line.startsWith("result ")) {
+                String[] parts = line.substring("result ".length()).trim().split(" ", 4); // 最多分割成4部分
+
+                if (parts.length >= 3 && validEvents.contains(String.join(" ", Arrays.copyOf(parts, parts.length - (parts.length == 4 ? 1 : 0))))) {
+                    String eventName = String.join(" ", Arrays.copyOf(parts, parts.length - (parts.length == 4 ? 1 : 0)));
+                    boolean isDetail = parts.length == 4 && "detail".equals(parts[3]);
+                    if (isDetail) {
+                        instructions.add(new Instruction("result", eventName + " detail"));
+                    } else if (parts.length == 3) {
+                        instructions.add(new Instruction("result", eventName));
+                    } else {
+                        instructions.add(new Instruction("n/a", null)); // 不符合预期的指令格式
+                    }
+                } else {
+                    instructions.add(new Instruction("n/a", null)); // 比赛项目名称无效
+                }
+            } else if ("players".equals(line)) {
+                instructions.add(new Instruction("players", null)); // players指令
+            } else {
+                instructions.add(new Instruction("error", null)); // 无法识别的指令
             }
         }
         return instructions;
@@ -244,20 +265,39 @@ public class Lib {
 
     // 将数据写入到输出文件
     public static void writeDataToFile(String inputFilePath, String outputFilePath) throws IOException {
-        // 从输入文件中读取指令
         List<Instruction> instructions = getInstructionsFromFile(inputFilePath);
-
         StringBuilder dataToWrite = new StringBuilder();
 
         for (Instruction instruction : instructions) {
-            if ("players".equalsIgnoreCase(instruction.getType())) {
-                // 获取运动员信息并追加到dataToWrite
-                String athletesData = getAthletes();
-                dataToWrite.append(athletesData).append("\n");
-            } else if ("result".equalsIgnoreCase(instruction.getType())) {
-                // 根据指令的argument获取比赛结果并追加到dataToWrite
-                String resultData = getFinalResult(instruction.getArgument());
-                dataToWrite.append(resultData).append("\n");
+            switch (instruction.getType()) {
+                case "players":
+                    // getAthletes方法返回所有运动员的信息
+                    String athletesData = getAthletes();
+                    dataToWrite.append(athletesData);
+                    break;
+                case "result":
+                    // 使用getEventName和isDetail来获取详细信息
+                    String eventName = instruction.getEventName();
+                    boolean detail = instruction.isDetail();
+
+                    if (detail) {
+                        // getAllResults方法返回比赛的详细结果
+                        String detailedResultData = getAllResults(eventName);
+                        dataToWrite.append(detailedResultData);
+                    } else {
+                        // getFinalResult方法返回比赛的最终结果
+                        String resultData = getFinalResult(eventName);
+                        dataToWrite.append(resultData);
+                    }
+                    break;
+                case "n/a":
+                    // 指令错误，写入N/A信息
+                    dataToWrite.append("N/A\n-----\n");
+                    break;
+                default:
+                    // 对于未识别的指令类型或错误，写入Error信息
+                    dataToWrite.append("Error\n-----\n");
+                    break;
             }
         }
 
