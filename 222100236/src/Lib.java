@@ -167,7 +167,17 @@ public class Lib {
         // 排序逻辑不变，确保按初赛排名排序
         athleteScores.entrySet().stream()
                 .sorted(Comparator.comparingInt(e -> {
-                    String rankStr = e.getValue().get("PreliminaryRank");
+                    String fullName = e.getKey();
+                    Map<String, String> info = e.getValue();
+                    String rankStr;
+                    // 判断选手全名中是否包含&
+                    if (fullName.contains("&")) {
+                        // 如果包含&，则使用FinalRank作为排序依据
+                        rankStr = info.getOrDefault("FinalRank", "*");
+                    } else {
+                        // 如果不包含&，则使用PreliminaryRank作为排序依据
+                        rankStr = info.getOrDefault("PreliminaryRank", "*");
+                    }
                     return rankStr.equals("*") ? Integer.MAX_VALUE : Integer.parseInt(rankStr);
                 }))
                 .forEach(entry -> {
