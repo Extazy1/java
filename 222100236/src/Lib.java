@@ -10,6 +10,9 @@ import java.util.stream.Stream;
 
 public class Lib {
     private static final Map<String, Map<String, Map<String, String>>> eventAthleteScores = new HashMap<>();     // 存储每个赛事的运动员信息
+    private static final Gson gson = new Gson(); // 创建单个Gson实例以供全局使用
+    private static final Map<String, String> fileContentCache = new HashMap<>(); // 用于缓存文件内容
+    private static final Map<String, Object> jsonParseCache = new HashMap<>(); // 用于缓存JSON解析结果
 
     // 解析运动员信息
     private static String parseAthlete(Athlete athlete, String countryName) {
@@ -47,15 +50,27 @@ public class Lib {
 
     // 解析赛事不同阶段的详细信息
     private static void parseAllResults(List<CompetitionResult.Result> results, String stage, String event) {
-        Map<String, Map<String, String>> athleteScores = eventAthleteScores.computeIfAbsent(event, k -> new HashMap<>());
+        Map<String, Map<String, String>> athleteScores = eventAthleteScores.get(event);
+        if (athleteScores == null) {
+            athleteScores = new HashMap<>();
+            eventAthleteScores.put(event, athleteScores);
+        }
 
         for (CompetitionResult.Result result : results) {
-            String fullName = result.getFullName().contains("/") ? formatSynchronisedFullName(result) : result.getFullName();
-            Map<String, String> scores = athleteScores.computeIfAbsent(fullName, k -> new HashMap<>());
+            String fullName = result.getFullName();
+            if (fullName.contains("/")) {
+                fullName = formatSynchronisedFullName(result);
+            }
+            Map<String, String> scores = athleteScores.get(fullName);
+            if (scores == null) {
+                scores = new HashMap<>();
+                athleteScores.put(fullName, scores);
+            }
             scores.put(stage + "Rank", String.valueOf(result.getRank()));
             scores.put(stage + "Score", generateScoreString(result.getDives()));
         }
     }
+
 
     // 生成所需的分数
     private static String generateScoreString(List<CompetitionResult.Dive> dives) {
@@ -91,12 +106,7 @@ public class Lib {
     // 获取赛事Id
     public static String getEventIdByDisciplineName(String disciplineName) throws IOException {
         String filePath = "src/data/event.json";
-        // 读取JSON文件内容
-        String content = new String(Files.readAllBytes(Paths.get(filePath)), StandardCharsets.UTF_8);
-        // 使用Gson将JSON字符串转换为Event对象
-        Gson gson = new Gson();
-        Event event = gson.fromJson(content, Event.class);
-
+        Event event = (Event) getCachedJson(filePath, Event.class);
         // 遍历Event对象寻找匹配的DisciplineName并返回其Id
         if (event.getSports() != null) {
             for (Event.Sport sport : event.getSports()) {
@@ -112,17 +122,32 @@ public class Lib {
         return "Discipline not found"; // 如果未找到匹配的DisciplineName，返回提示信息
     }
 
+    // 利用缓存读取文件和解析JSON的通用方法
+    private static Object getCachedJson(String filePath, Class<?> clazz) throws IOException {
+        Object cachedResult = jsonParseCache.get(filePath);
+        if (cachedResult == null) {
+            String content = fileContentCache.computeIfAbsent(filePath, k -> {
+                try {
+                    return new String(Files.readAllBytes(Paths.get(k)), StandardCharsets.UTF_8);
+                } catch (IOException e) {
+                    e.printStackTrace();
+                    return null;
+                }
+            });
+            cachedResult = gson.fromJson(content, clazz);
+            jsonParseCache.put(filePath, cachedResult);
+        }
+        return cachedResult;
+    }
+
     // 获取某个赛事的决赛结果
     public static String getFinalResult(String name) throws IOException {
         String id = getEventIdByDisciplineName(name);
         String filePath = "src/data/results/" + id + ".json";
         StringBuilder res = new StringBuilder();
 
-        // 读取JSON文件内容
-        String content = new String(Files.readAllBytes(Paths.get(filePath)), StandardCharsets.UTF_8);
-        // 使用Gson将JSON字符串转换为Event对象
-        Gson gson = new Gson();
-        CompetitionResult competitionResult = gson.fromJson(content, CompetitionResult.class);
+        // 使用缓存获取CompetitionResult对象
+        CompetitionResult competitionResult = (CompetitionResult) getCachedJson(filePath, CompetitionResult.class);
 
         // 获取决赛运动员信息
         for (CompetitionResult.Heat heat : competitionResult.Heats) {
@@ -143,10 +168,8 @@ public class Lib {
         String filePath = "src/data/results/" + id + ".json";
         StringBuilder res = new StringBuilder();
 
-        // 读取JSON文件内容
-        String content = new String(Files.readAllBytes(Paths.get(filePath)), StandardCharsets.UTF_8);
-        Gson gson = new Gson();
-        CompetitionResult competitionResult = gson.fromJson(content, CompetitionResult.class);
+        // 使用缓存获取CompetitionResult对象
+        CompetitionResult competitionResult = (CompetitionResult) getCachedJson(filePath, CompetitionResult.class);
 
         // 获取当前赛事的运动员信息
         for (CompetitionResult.Heat heat : competitionResult.Heats) {
